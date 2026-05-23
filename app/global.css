@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --tesla-red: #e31937;
+}
+
+.card {
+  background: #1f1f1f;
+  border: 1px solid #333;
+  border-radius: 20px;
+}
