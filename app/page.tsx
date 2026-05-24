@@ -1,120 +1,112 @@
-import { Client } from '@notionhq/client';
-import { revalidatePath } from 'next/cache';
+'use client';
 
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
+import { useState, useEffect } from 'react';
 
-async function getDashboardData() {
-  // Global Context
-  const globalContext = await notion.pages.retrieve({ 
-    page_id: '35bd8c2c-c49c-8108-b08c-dca495cb9818' 
-  });
+export default function MasterDashboard() {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Tasks (incomplete only)
-  const tasksResponse = await notion.databases.query({
-    database_id: '0c497bd4-0f33-4133-b2e4-3ec6fc61a06a',
-    filter: { property: 'Status', select: { does_not_equal: 'Done' } },
-    sorts: [
-      { property: 'Priority', direction: 'ascending' },
-      { property: 'Due Date', direction: 'ascending' },
-    ],
-    page_size: 7,
-  });
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await fetch('/api/dashboard');
+        const json = await res.json();
+        setData(json);
+      } catch (error) {
+        console.error('Failed to fetch dashboard data', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  // TSLA price (Yahoo public)
-  const tslaRes = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1d&range=1d');
-  const tslaData = await tslaRes.json();
-  const tslaPrice = tslaData.chart.result[0].meta.regularMarketPrice;
-  const tslaChange = tslaData.chart.result[0].meta.regularMarketChangePercent;
+    fetchData();
+  }, []);
 
-  // Weather (Oregon City)
-  const weatherRes = await fetch('https://api.open-meteo.com/v1/forecast?latitude=45.3573&longitude=-122.6068&current=temperature_2m&daily=precipitation_sum&timezone=America/Los_Angeles');
-  const weather = await weatherRes.json();
-
-  return {
-    globalContext: (globalContext as any).properties,
-    tasks: tasksResponse.results,
-    tsla: { price: tslaPrice, change: tslaChange },
-    weather: weather.current.temperature_2m,
-  };
-}
-
-export default async function MasterDashboard() {
-  const data = await getDashboardData();
+  if (loading || !data) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-[#e31937] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p>Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[420px] mx-auto min-h-screen bg-[#0a0a0a] p-4 text-white">
-      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <div className="text-[11px] text-[#e31937] tracking-[3px]">GROK ORCHESTRATOR v10</div>
-          <div className="text-2xl font-semibold">MASTER DASHBOARD</div>
+          <div className="text-3xl font-semibold">MASTER DASHBOARD</div>
         </div>
         <div className="text-right text-xs text-gray-400">
-          {new Date().toLocaleTimeString('en-US', { timeZone: 'America/Denver' })} MST<br />
-          San José del Cabo
+          {new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York' })} EST
         </div>
       </div>
 
-      {/* Portfolio + TSLA */}
-      <div className="card p-5 mb-4">
-        <div className="flex justify-between items-start">
-          <div>
-            <div className="text-xs text-gray-400">RETIREMENT PORTFOLIO</div>
-            <div className="text-4xl font-semibold tabular-nums">$616k</div>
-          </div>
-          <div className="text-right">
-            <div className="text-xs text-gray-400">TSLA LIVE</div>
-            <div className="text-3xl font-semibold tabular-nums">${data.tsla.price}</div>
-            <div className={data.tsla.change >= 0 ? 'text-green-400' : 'text-red-400'}>
-              {data.tsla.change > 0 ? '+' : ''}{data.tsla.change.toFixed(2)}%
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Global Context Priorities */}
-      <div className="card p-5 mb-4">
-        <div className="text-xs text-[#e31937] mb-3 tracking-widest">GLOBAL CONTEXT PRIORITIES</div>
-        <div className="space-y-3 text-sm">
-          <div>1. <span className="font-medium">$5M Retirement (TSLA-heavy)</span> — On track</div>
-          <div>2. <span className="font-medium">Home Value Appreciation</span> — Jada Way baseline $606k</div>
-          <div>3. <span className="font-medium">Family Memories</span> — Active</div>
-          <div>4. <span className="font-medium">OHSU Revenue Cycle 10x</span> — 2026-2031</div>
-          <div>5. <span className="font-medium">Energy & Health</span> — Foundational</div>
-        </div>
-      </div>
-
-      {/* Today's Must-Dos */}
-      <div className="card p-5 mb-4">
-        <div className="flex justify-between items-center mb-3">
-          <div className="text-xs text-[#e31937] tracking-widest">TODAY'S MUST-DOS</div>
-          <div className="text-[10px] px-2 py-0.5 rounded-full bg-white/10">{data.tasks.length} open</div>
-        </div>
-        <div className="space-y-2 text-sm">
-          {data.tasks.length > 0 ? data.tasks.map((task: any, i: number) => (
-            <div key={i} className="flex items-center gap-3 py-1 border-b border-white/10 last:border-0">
-              <div className="w-2 h-2 rounded-full bg-[#e31937]"></div>
-              <div className="flex-1">{task.properties['Task Name']?.title?.[0]?.text?.content || 'Untitled task'}</div>
-              <div className="text-[10px] text-gray-400">{task.properties.Priority?.select?.name}</div>
-            </div>
-          )) : <div className="text-gray-400 text-sm">No open high-priority tasks — excellent.</div>}
-        </div>
-      </div>
-
-      {/* Weather + Watering */}
-      <div className="card p-5 mb-4">
+      {/* Portfolio */}
+      <div className="bg-[#1f1f1f] border border-[#333] rounded-2xl p-5 mb-4">
         <div className="flex justify-between">
           <div>
-            <div className="text-xs text-gray-400">JADA WAY • OREGON CITY</div>
-            <div className="text-4xl font-semibold tabular-nums">{data.weather}°F</div>
+            <div className="text-xs text-gray-400">RETIREMENT PORTFOLIO</div>
+            <div className="text-5xl font-semibold">$616k</div>
           </div>
-          <div className="text-right text-sm text-emerald-400">Watering: Light (0.2")</div>
+          <div className="text-right">
+            <div className="text-xs text-gray-400">TSLA</div>
+            <div className="text-3xl font-semibold">${data.tsla?.price || '---'}</div>
+            <div className={data.tsla?.change >= 0 ? 'text-green-400' : 'text-red-400'}>
+              {data.tsla?.change ? (data.tsla.change > 0 ? '+' : '') + data.tsla.change.toFixed(2) + '%' : ''}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="text-[10px] text-center text-gray-500 mt-8">
-        Synced from Notion • Next review: Daily 05:30 MST<br />
-        v10 • {new Date().toISOString().split('T')[0]}
+      {/* Global Context */}
+      <div className="bg-[#1f1f1f] border border-[#333] rounded-2xl p-5 mb-4">
+        <div className="text-[#e31937] text-xs tracking-widest mb-3">GLOBAL CONTEXT PRIORITIES</div>
+        <div className="space-y-2 text-sm">
+          {data.priorities?.map((p: string, i: number) => (
+            <div key={i} className="flex gap-3">
+              <span className="text-[#e31937] font-mono text-xs mt-0.5">{i + 1}</span>
+              <span>{p}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tasks */}
+      <div className="bg-[#1f1f1f] border border-[#333] rounded-2xl p-5 mb-4">
+        <div className="flex justify-between mb-3">
+          <div className="text-[#e31937] text-xs tracking-widest">TODAY'S MUST-DOS</div>
+          <div className="text-xs bg-white/10 px-2 py-0.5 rounded-full">{data.tasks?.length || 0} open</div>
+        </div>
+        
+        <div className="space-y-2 text-sm">
+          {data.tasks?.length > 0 ? data.tasks.map((task: any, index: number) => (
+            <div key={index} className="flex justify-between py-2 border-b border-white/10 last:border-0">
+              <div>{task.name}</div>
+              <div className="text-xs text-gray-400">{task.priority}</div>
+            </div>
+          )) : (
+            <div className="text-emerald-400">All clear!</div>
+          )}
+        </div>
+      </div>
+
+      {/* Weather */}
+      <div className="bg-[#1f1f1f] border border-[#333] rounded-2xl p-5">
+        <div className="flex justify-between items-center">
+          <div>
+            <div className="text-xs text-gray-400">JADA WAY, OREGON CITY</div>
+            <div className="text-5xl font-semibold">{data.weather || '--'}°F</div>
+          </div>
+          <div className="text-emerald-400 text-sm">Watering: Light</div>
+        </div>
+      </div>
+
+      <div className="text-center text-[10px] text-gray-500 mt-8">
+        v10 • Synced from Notion
       </div>
     </div>
   );
